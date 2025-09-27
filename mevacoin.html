@@ -1,20 +1,20 @@
 <!DOCTYPE html>
-<html lang=en>
+<html lang="en">
 
 <head>
-    <meta charset=UTF-8>
-    <title>Monero Cold Wallet Generator</title>
-    <meta name=description
-        content="A lightweight, client-side, reliable, fast, open-source universal cold wallet generator supporting almost every major cryptocurrency">
-    <meta name=keywords
-        content="minimal, reliable, fast, universal, cold, wallet, generator, offline, monero, xmr, cryptocurrency">
-    <meta name=viewport content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <title>Mevacoin Cold Wallet Generator</title>
+    <meta name="description"
+        content="Cold wallet generator for Mevacoin (MVC), based on CryptoNote">
+    <meta name="keywords"
+        content="mevacoin, mvc, cold wallet, generator, cryptonote, cryptocurrency">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style2.css">
 </head>
 
-<body onload=generate()>
+<body onload="generate()">
     <div class="container">
-        <h1>Monero Cold Wallet</h1>
+        <h1>Mevacoin Cold Wallet</h1>
         <div class="button-group">
             <button onclick="window.location.href='index.html'">Home</button>
             <button onclick="generate()">Generate</button>
@@ -31,12 +31,9 @@
             <div id="secret_qr" class="qr-code"></div>
         </div>
     </div>
-    <script src=js/monero.js></script>
-    <script src=js/qrcode.js></script>
-    <script type=text/javascript>
-        $(function () {
-            generate()
-        });
+    <script src="js/mevacoin.js"></script>
+    <script src="js/qrcode.js"></script>
+    <script type="text/javascript">
         var account, keyPair, pubKey, privKey;
 
         function generate() {
@@ -67,7 +64,7 @@
                 colorDark: "#e0e0e0",
                 colorLight: "#1e1e1e",
                 correctLevel: QRCode.CorrectLevel.H
-            })
+            });
         }
     </script>
 </body>
