@@ -19744,11 +19744,11 @@ run()
 
 
 var moneroConfig = {
-    coinUnitPlaces: 12,
+    coinUnitPlaces: 5,
     coinSymbol: 'XMR',
     coinName: 'Monero',
     coinUriPrefix: 'monero:',
-    addressPrefix: 18
+    addressPrefix: 18511
 };
 var aeonConfig = {
     coinUnitPlaces: 12,
