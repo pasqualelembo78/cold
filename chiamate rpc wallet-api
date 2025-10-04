@@ -1,0 +1,113 @@
+
+---
+
+1️⃣ Wallet
+
+Crea wallet:
+
+curl -X POST http://127.0.0.1:17082/wallet/create \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: desy2011" \
+  -d '{"filename":"/opt/mevacoin/build/src/testwallet_1.wallet","password":"desy2011"}'
+
+Apri wallet:
+
+curl -X POST http://127.0.0.1:17082/wallet/open \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: desy2011" \
+  -d '{"filename":"/opt/mevacoin/build/src/testwallet_1.wallet","password":"desy2011"}'
+
+Chiudi wallet:
+
+curl -X DELETE http://127.0.0.1:17082/wallet \
+  -H "X-API-KEY: desy2011"
+
+Importa da seed:
+
+curl -X POST http://127.0.0.1:17082/wallet/import/seed \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: desy2011" \
+  -d '{"filename":"/opt/mevacoin/build/src/testwallet_1.wallet","password":"desy2011","mnemonic":"qui va il seed"}'
+
+
+---
+
+2️⃣ Indirizzi
+
+Lista indirizzi:
+
+curl -X GET http://127.0.0.1:17082/addresses \
+  -H "X-API-KEY: desy2011"
+
+Indirizzo principale:
+
+curl -X GET http://127.0.0.1:17082/addresses/primary \
+  -H "X-API-KEY: desy2011"
+
+Crea nuovo indirizzo casuale:
+
+curl -X POST http://127.0.0.1:17082/addresses/create \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: desy2011"
+
+
+---
+
+3️⃣ Chiavi / Seed
+
+Ottieni private view key condivisa:
+
+curl -X GET http://127.0.0.1:17082/keys \
+  -H "X-API-KEY: desy2011"
+
+Ottieni seed mnemonico (deve essere aperto):
+
+curl -X GET http://127.0.0.1:17082/keys/mnemonic/{indirizzo} \
+  -H "X-API-KEY: desy2011"
+
+
+---
+
+4️⃣ Bilanci
+
+Bilancio totale wallet:
+
+curl -X GET http://127.0.0.1:17082/balance \
+  -H "X-API-KEY: desy2011"
+
+Bilancio per indirizzo specifico:
+
+curl -X GET http://127.0.0.1:17082/balance/{indirizzo} \
+  -H "X-API-KEY: desy2011"
+
+
+---
+
+5️⃣ Transazioni
+
+Lista tutte le transazioni:
+
+curl -X GET http://127.0.0.1:17082/transactions \
+  -H "X-API-KEY: desy2011"
+
+Invia transazione semplice:
+
+curl -X POST http://127.0.0.1:17082/transactions/send/basic \
+  -H "Content-Type: application/json" \
+  -H "X-API-KEY: desy2011" \
+  -d '{"address":"indirizzo_dest","amount":1000000,"paymentID":""}'
+
+
+---
+
+6️⃣ Salvataggio / Stato
+
+Salva wallet:
+
+curl -X PUT http://127.0.0.1:17082/save \
+  -H "X-API-KEY: desy2011"
+
+Stato wallet (sync, peer count, hashrate):
+
+curl -X GET http://127.0.0.1:17082/status \
+  -H "X-API-KEY: desy2011"
