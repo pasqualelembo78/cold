@@ -1,157 +1,62 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="UTF-8" />
-  <title>Cold Wallet Generator</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="icon" type="image/png" sizes="32x32" href="img/favicon.png">
-  <script>
-    if (localStorage.getItem('theme') === 'light') {
-      document.documentElement.classList.add('light-mode');
-    }
-  </script>
+  <title>Test Wallet API - Mevacoin</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; background: #f7f7f7; padding: 20px; border-radius: 12px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    h1 { text-align: center; color: #333; }
+    button { display: block; margin: 20px auto; padding: 10px 20px; font-size: 16px; cursor: pointer; background-color: #1976d2; color: white; border: none; border-radius: 6px; }
+    button:hover { background-color: #125a9c; }
+    pre { background: #272822; color: #f8f8f2; padding: 15px; border-radius: 8px; white-space: pre-wrap; word-wrap: break-word; }
+    .success { color: #4CAF50; font-weight: bold; }
+    .error { color: #F44336; font-weight: bold; }
+  </style>
 </head>
 <body>
-  <button id="themeToggle" style="position: absolute; top: 20px; right: 20px; padding: 0.5rem 1rem; background: #444; color: #eee; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem;">☀️</button>
-  <div style="display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; margin-left: 1rem;">
-    <img src="img/logo.png" alt="Cold Wallet Logo" style="height:32px;">
-    &nbsp;<h1>Cold Wallet Generator</h1>
-  </div>
-  <p>Search and select a coin to generate its cold wallet</p>
+  <h1>Test Connessione Mevacoin Wallet API</h1>
 
-  <!-- <div class="security-warnings" style="border: 1px solid #ff6b6b; border-radius: 8px; padding: 1.5rem; margin: 2rem 0; max-width: 800px; margin-left: auto; margin-right: auto;">
-    <p style="line-height: 1.6; margin: 0;">
-      For security reasons, use these tools on a computer that is not connected to the internet. Don't share your private key with anyone and keep it in a safe place. Make copies of the generated keys and addresses and store them in multiple secure locations. Test with a small amount first and then send larger amounts. Also, check the addresses that were generated from different sources.
-    </p>
-  </div> -->
+  <button id="creaWallet">Crea Nuovo Wallet</button>
 
-  <div class="dropdown-container">
-    <input type="text" id="dropdownInput" placeholder="🔍 find your coin..." oninput="filterDropdown()" onclick="toggleDropdown()" autocomplete="off">
-    <div id="dropdownList" class="dropdown-list"></div>
-  </div>
-
-  <footer>
-    <p><a href="https://github.com/expatjedi/cold-wallet-generator" target="_blank">🔗 Source Code (GitHub)</a></p>
-  </footer>
+  <pre id="output">Clicca sul pulsante per iniziare...</pre>
 
   <script>
-    document.getElementById('themeToggle').addEventListener('click', () => {
-      document.documentElement.classList.toggle('light-mode');
-      const isLight = document.documentElement.classList.contains('light-mode');
-      localStorage.setItem('theme', isLight ? 'light' : 'dark');
-      document.getElementById('themeToggle').innerText = isLight ? '🌙 ' : '☀️ ';
-    });
+    document.getElementById('creaWallet').addEventListener('click', async () => {
+      const output = document.getElementById('output');
+      output.textContent = "Creazione wallet in corso...";
 
-    if (document.documentElement.classList.contains('light-mode')) {
-      document.getElementById('themeToggle').innerText = '🌙 ';
-    }
+      const filename = "testwallet_" + Date.now() + ".wallet";
+      const password = "desy2011";
 
-    const coinList = [
-      { name: "Bitcoin (BTC)", url: "bitcoin.html" },
-      { name: "Ethereum (ETH)", url: "ethereum.html" },
-      { name: "Solana (SOL)", url: "solana.html" },
-      { name: "Binance (BNB)", url: "binance.html" },
-      { name: "Polkadot (DOT)", url: "polkadot.html" },
-      { name: "Algorand (ALGO)", url: "algorand.html" },
-      { name: "Cardano (ADA)", url: "cardano.html" },
-      { name: "Avalanche (AVAX)", url: "avalanche.html" },
-      { name: "Dogecoin (DOGE)", url: "dogecoin.html" },
-      { name: "Tron (TRX)", url: "tron.html" },
-      { name: "Litecoin (LTC)", url: "litecoin.html" },
-      { name: "Stellar Lumens (XLM)", url: "stellar.html" },
-      { name: "Dash (DASH)", url: "dash.html" },
-      { name: "Filecoin (FIL)", url: "filecoin.html" },
-      { name: "Goldcoin (GLC)", url: "goldcoin.html" },
-      { name: "Namecoin (NMC)", url: "namecoin.html" },
-      { name: "Mevacoin (MVC)", url: "mevacoin.html" },
-      { name: "Validity (VAL)", url: "validity.html" },
-      { name: "Litecoincash (LCC)", url: "litecoincash.html" },
-      { name: "Auroracoin (AUR)", url: "auroracoin.html" },
-      { name: "Dmdcoin (DMD)", url: "dmdcoin.html" },
-      { name: "Bitcoin Cash (BCH)", url: "bitcoincash.html" },
-      { name: "Zcash (ZEC)", url: "zcash.html" },
-      { name: "Pivx (PIVX)", url: "pivx.html" },
-      { name: "Monacoin (MONA)", url: "monacoin.html" },
-      { name: "DigiByte (DGB)", url: "digibyte.html" },
-      { name: "Bitcoin Gold (BTG)", url: "bitcoingold.html" },
-      { name: "Qtum (QTUM)", url: "qtum.html" },
-      { name: "ReddCoin (RDD)", url: "reddcoin.html" },
-      { name: "Banano (BAN)", url: "banano.html" },
-      { name: "Deutsche eMark (DEM)", url: "deutsche-emark.html" },
-      { name: "Blackcoin (BLK)", url: "blackcoin.html" },
-      { name: "Bitcoin Plus (XBC)", url: "bitcoinplus.html" },
-      { name: "LBRY Credits (LBRY)", url: "lbry.html" },
-      { name: "Verge (XVG)", url: "verge.html" },
-      { name: "Unobtanium (UNO)", url: "unobtanium.html" },
-      { name: "Peercoin (PPC)", url: "peercoin.html" },
-      { name: "Dimecoin (DIME)", url: "dimecoin.html" },
-      { name: "Ravencoin (RVN)", url: "ravencoin.html" },
-      { name: "Feathercoin (FTC)", url: "feathercoin.html" },
-      { name: "Einsteinium (EMC2)", url: "einsteinium.html" },
-      { name: "Viacoin (VIA)", url: "viacoin.html" },
-      { name: "Vertcoin (VTC)", url: "vertcoin.html" },
-      { name: "Garlicoin (GRLC)", url: "garlicoin.html" },
-      { name: "Fujicoin (FJC)", url: "fujicoin.html" },
-      { name: "Gridcoin (GRC)", url: "gridcoin.html" },
-      { name: "Emercoin (EMC)", url: "emercoin.html" },
-      { name: "Ecash (XEC)", url: "ecash.html" },
-      { name: "Veruscoin (VRSC)", url: "veruscoin.html" },
-      { name: "Blocknet (BLOCK)", url: "blocknet.html" },
-      { name: "Syscoin (SYS)", url: "syscoin.html" },
-      { name: "Bataoshi (BTA)", url: "bata.html" },
-      { name: "Komodo (KMD)", url: "komodo.html" },
-      { name: "Yenten Coin (YTN)", url: "yenten.html" },
-      { name: "Axe (AXE)", url: "axe.html" },
-      { name: "Chaincoin (CHC)", url: "chaincoin.html" },
-      { name: "Florin (XFL)", url: "florin.html" },
-      { name: "Firo (FIRO)", url: "firo.html" },
-      { name: "Terracoin (TRC)", url: "terracoin.html" },
-      { name: "Whitecoin (XWC)", url: "whitecoin.html" },
-      { name: "Particl (PART)", url: "particl.html" },
-      { name: "Tajcoin (TAJ)", url: "tajcoin.html" },
-      { name: "Biblepay (BBP)", url: "biblepay.html" },
-      { name: "Hydra (HYDRA)", url: "hydra.html" },
-      { name: "Lynx (LYNX)", url: "lynx.html" },
-      { name: "Myriad (XMY)", url: "myriadcoin.html" },
-      { name: "Monetary Unit (MUE)", url: "muecoin.html" },
-      { name: "Ixcoin (IXC)", url: "ixcoin.html" },
-      { name: "Alias (ALIAS)", url: "alias.html" },
-      { name: "BitBlocks (BBK)", url: "bitblocks.html" },
-      { name: "Marmara Credit Loops (MCL)", url: "marmara.html" },
-      { name: "Groestlcoin (GRS)", url: "groestlcoin.html" },
-      { name: "DeFiChain (DFI)", url: "defichain.html" },
-      { name: "Doichain (DOI)", url: "doichain.html" },
-      { name: "Mooncoin (MOON)", url: "mooncoin.html" },
-    ];
+      try {
+        const response = await fetch('api.php', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename, password })
+        });
 
-    const input = document.getElementById("dropdownInput");
-    const list = document.getElementById("dropdownList");
+        const text = await response.text();
+        console.log('Raw response:', text);
 
-    function toggleDropdown() {
-      list.style.display = list.style.display === "block" ? "none" : "block";
-      filterDropdown();
-    }
+        try {
+          const data = JSON.parse(text);
+          
+          if(data.status === "success") {
+            output.innerHTML = `<span class="success">✔ Wallet creato con successo!</span>\nNome file: ${data.wallet_file}\n\nRisposta raw:\n${data.wallet_response_raw || '(vuota)'}`;
+          } else {
+            output.innerHTML = `<span class="error">❌ Errore nella creazione del wallet</span>\nDettagli:\n${JSON.stringify(data, null, 2)}`;
+          }
 
-    function filterDropdown() {
-      const filter = input.value.toLowerCase();
-      list.innerHTML = "";
-
-      coinList.forEach(coin => {
-        if (coin.name.toLowerCase().includes(filter)) {
-          const item = document.createElement("div");
-          item.textContent = coin.name;
-          item.onclick = () => window.location.href = coin.url;
-          list.appendChild(item);
+        } catch (e) {
+          output.innerHTML = `<span class="error">❌ Risposta non JSON</span>\n${text}`;
         }
-      });
 
-      list.style.display = "block";
-    }
+        if (!response.ok) {
+          console.warn('HTTP status non OK:', response.status);
+        }
 
-    document.addEventListener("click", (e) => {
-      if (!document.querySelector(".dropdown-container").contains(e.target)) {
-        list.style.display = "none";
+      } catch(err) {
+        output.innerHTML = `<span class="error">❌ Errore JS</span>\n${err.message}`;
       }
     });
   </script>
