@@ -277,6 +277,22 @@ switch ($action) {
         break;
 
     //
+
+case 'download_wallet':
+    // Controllo file esista
+    if (!file_exists($fullPath)) {
+        echo json_encode(['status'=>'error','message'=>"File wallet non trovato: $filename"]);
+        exit;
+    }
+    // Genero un token temporaneo
+    $token = bin2hex(random_bytes(16));
+    $tokenFile = "/tmp/wallet_token_$token.json";
+    file_put_contents($tokenFile, json_encode(['file'=>$fullPath, 'expires'=>time()+300])); // 5 minuti
+    echo json_encode(['status'=>'success','token'=>$token]);
+    exit;
+
+
+
     // NODE
     //
     case 'node_get':
