@@ -1,1 +1,1 @@
-Per avviare l'installazione scarica il file install.sh
+Per avviare l'installazione scarica il file app.sh
