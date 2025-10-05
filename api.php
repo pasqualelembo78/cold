@@ -8,8 +8,7 @@ ini_set('display_errors', 1);
 
 $logFile = '/tmp/api_debug.log';
 $verboseFile = '/tmp/curl_verbose.log';
-$apiHost = 'http://127.0.0.1:17082'; // base wallet-api
-
+$apiHost = 'https://www.mevacoin.com/wallet-api'; // base wallet-api
 if (!file_exists($logFile)) touch($logFile);
 if (!file_exists($verboseFile)) touch($verboseFile);
 @chmod($logFile, 0664);
