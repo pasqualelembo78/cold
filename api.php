@@ -8,7 +8,7 @@ ini_set('display_errors', 1);
 
 $logFile = '/tmp/api_debug.log';
 $verboseFile = '/tmp/curl_verbose.log';
-$apiHost = 'https://www.mevacoin.com/wallet-api'; // base wallet-api
+$apiHost = 'http://82.165.218.56:8070'; // base wallet-api
 if (!file_exists($logFile)) touch($logFile);
 if (!file_exists($verboseFile)) touch($verboseFile);
 @chmod($logFile, 0664);
@@ -58,10 +58,56 @@ switch ($action) {
     // WALLET: create / open / import / close
     //
     case 'create':
-        $url = $apiHost . '/wallet/create';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password];
-        break;
+    // 1) CREA IL WALLET
+    $createUrl = $apiHost . '/wallet/create';
+    $payload = ['filename' => $fullPath, 'password' => $password];
+
+    $ch1 = curl_init($createUrl);
+    curl_setopt($ch1, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch1, CURLOPT_HTTPHEADER, ['X-API-KEY: desy2011', 'Content-Type: application/json']);
+    curl_setopt($ch1, CURLOPT_POST, true);
+    curl_setopt($ch1, CURLOPT_POSTFIELDS, json_encode($payload));
+    $resp1 = curl_exec($ch1);
+    $err1  = curl_error($ch1);
+    $code1 = curl_getinfo($ch1, CURLINFO_HTTP_CODE);
+    curl_close($ch1);
+
+    file_put_contents($logFile, "wallet_create → response: $resp1\n", FILE_APPEND);
+
+    // Se errore nella creazione
+    if ($err1 || $code1 !== 200) {
+        echo json_encode([
+            'status'=>'error',
+            'message'=>'Errore durante la creazione wallet',
+            'http_code'=>$code1,
+            'error'=>$err1,
+            'wallet_response_raw'=>$resp1
+        ]);
+        exit;
+    }
+
+    // 2) CHIUDE SUBITO IL WALLET APPENA CREATO
+    $closeUrl = $apiHost . '/wallet';
+    $ch2 = curl_init($closeUrl);
+    curl_setopt($ch2, CURLOPT_CUSTOMREQUEST, 'DELETE');
+    curl_setopt($ch2, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch2, CURLOPT_HTTPHEADER, ['X-API-KEY: desy2011']);
+    $resp2 = curl_exec($ch2);
+    $err2  = curl_error($ch2);
+    $code2 = curl_getinfo($ch2, CURLINFO_HTTP_CODE);
+    curl_close($ch2);
+
+    file_put_contents($logFile, "wallet_create → wallet close: $resp2\n", FILE_APPEND);
+
+    // 3) Risposta finale
+    echo json_encode([
+        'status'=>'success',
+        'wallet_created'=> json_decode($resp1, true),
+        'wallet_closed'=> ($code2 === 200 || $code2 === 204),
+        'wallet_close_raw'=>$resp2
+    ], JSON_PRETTY_PRINT);
+    exit;
+
     case 'open':
         $url = $apiHost . '/wallet/open';
         $method = 'POST';
