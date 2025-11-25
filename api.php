@@ -1,382 +1,324 @@
 <?php
-// api.php - proxy e helper verso wallet-api locale (Mevacoin)
-// Debug: /tmp/api_debug.log e /tmp/curl_verbose.log
+// api.php - Proxy robusto, multi-server, multi-utente e queue per wallet-api (Mevacoin)
+// Versione: legge API_KEY da /opt/mevacoin_config/.env (solo API key)
+
+date_default_timezone_set('Europe/Rome');
+
+$LOG_BASE     = '/tmp/mevacoin_api';
+$QUEUE_DIR    = $LOG_BASE . '/queue';
+$JOBS_DIR     = $LOG_BASE . '/jobs';
+$RESULTS_DIR  = $LOG_BASE . '/results';
+$VERBOSE_FILE = $LOG_BASE . '/curl_verbose.log';
+$API_DEBUG    = $LOG_BASE . '/api_debug.log';
+
+$SERVERS = [
+    '82' => 'http://82.165.218.56:8070',
+    '87' => 'http://87.106.40.193:8070'
+];
+
+$BASE_WALLET_DIR = '/opt/mevacoin_data/wallets';
+$LOCK_TIMEOUT = 60;
+
+// Path del file .env che contiene solo la API_KEY (fuori dalla webroot)
+$ENV_PATH = '/opt/mevacoin_config/.env';
+
+// -----------------------------------------------------------------------------
+// prepare dirs, headers, logging
+// -----------------------------------------------------------------------------
+@mkdir($LOG_BASE, 0775, true);
+@mkdir($QUEUE_DIR, 0775, true);
+@mkdir($JOBS_DIR, 0775, true);
+@mkdir($RESULTS_DIR, 0775, true);
+@mkdir($BASE_WALLET_DIR, 0775, true);
 
 header('Content-Type: application/json');
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 
-$logFile = '/tmp/api_debug.log';
-$verboseFile = '/tmp/curl_verbose.log';
-$apiHost = 'https://www.mevacoin.com/wallet-api'; // base wallet-api
-if (!file_exists($logFile)) touch($logFile);
-if (!file_exists($verboseFile)) touch($verboseFile);
-@chmod($logFile, 0664);
-@chmod($verboseFile, 0664);
+function log_line($path, $message) {
+    $line = '['.date('Y-m-d H:i:s').'] ' . $message . PHP_EOL;
+    @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+}
 
-file_put_contents($logFile, "===== Nuova chiamata ===== ".date('Y-m-d H:i:s')."\n", FILE_APPEND);
-
-set_error_handler(function($errno, $errstr, $errfile, $errline) use ($logFile){
-    file_put_contents($logFile, "PHP Error [$errno] $errstr in $errfile:$errline\n", FILE_APPEND);
-});
-register_shutdown_function(function() use ($logFile){
-    $error = error_get_last();
-    if ($error) file_put_contents($logFile, "Fatal error: ".print_r($error,true)."\n", FILE_APPEND);
-});
-
-// Read input
-$inputRaw = file_get_contents('php://input');
-file_put_contents($logFile, "Input raw: $inputRaw\n", FILE_APPEND);
-$input = json_decode($inputRaw, true) ?: [];
-file_put_contents($logFile, "Input decodificato: ".print_r($input, true)."\n", FILE_APPEND);
-
-// Basic params
-$action    = $input['action'] ?? 'create';
-$filename  = $input['filename'] ?? 'testwallet_1.wallet';
-$password  = $input['password'] ?? 'desy2011';
-$address   = $input['address'] ?? '';
-$amount    = $input['amount'] ?? 0;
-$paymentID = $input['paymentID'] ?? '';
-$keys_spend = $input['spend_key'] ?? '';
-$keys_view  = $input['view_key'] ?? '';
-$mnemonic   = $input['mnemonic'] ?? '';
-$filepath   = $input['filepath'] ?? '/tmp/export_wallet.json';
-$startHeight = isset($input['startHeight']) ? intval($input['startHeight']) : null;
-$endHeight   = isset($input['endHeight']) ? intval($input['endHeight']) : null;
-
-// base dir per file wallet nel filesystem del demone (come richiesto)
-$baseDir  = '/opt/mevacoin/build/src/';
-$fullPath = $baseDir . $filename;
-
-$url = '';
-$method = 'GET'; // default
-$payload = null; // array or null
-
-// Build request depending on action
-switch ($action) {
-    //
-    // WALLET: create / open / import / close
-    //
-    case 'create':
-        $url = $apiHost . '/wallet/create';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password];
-        break;
-    case 'open':
-        $url = $apiHost . '/wallet/open';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password];
-        break;
-    case 'close':
-        $url = $apiHost . '/wallet';
-        $method = 'DELETE';
-        break;
-    case 'import_seed':
-    case 'import/seed':
-        $url = $apiHost . '/wallet/import/seed';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password, 'mnemonic' => $mnemonic];
-        break;
-    case 'import_key':
-    case 'import/key':
-        $url = $apiHost . '/wallet/import/key';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password, 'privateSpendKey' => $keys_spend, 'privateViewKey' => $keys_view];
-        break;
-    case 'import_view':
-    case 'import/view':
-        $url = $apiHost . '/wallet/import/view';
-        $method = 'POST';
-        $payload = ['filename' => $fullPath, 'password' => $password, 'publicSpendKey' => $input['publicSpendKey'] ?? '', 'privateViewKey' => $keys_view];
-        break;
-
-    //
-    // ADDRESSES
-    //
-    case 'addresses':
-        $url = $apiHost . '/addresses';
-        $method = 'GET';
-        break;
-    case 'address': // primary
-        $url = $apiHost . '/addresses/primary';
-        $method = 'GET';
-        break;
-    case 'address_create':
-        $url = $apiHost . '/addresses/create';
-        $method = 'POST';
-        $payload = (isset($input['label']) ? ['label' => $input['label']] : null);
-        break;
-    case 'address_import':
-        $url = $apiHost . '/addresses/import';
-        $method = 'POST';
-        $payload = ['privateSpendKey' => $keys_spend];
-        break;
-    case 'address_import_view':
-        $url = $apiHost . '/addresses/import/view';
-        $method = 'POST';
-        $payload = ['publicSpendKey' => $input['publicSpendKey'] ?? '', 'address' => $input['address'] ?? ''];
-        break;
-    case 'address_delete':
-        if (empty($address)) { echo json_encode(['status'=>'error','message'=>'Serve l\'indirizzo da cancellare']); exit; }
-        $url = $apiHost . '/addresses/' . rawurlencode($address);
-        $method = 'DELETE';
-        break;
-    case 'address_integrated':
-        if (empty($address) || !isset($input['paymentID'])) { echo json_encode(['status'=>'error','message'=>'Serve address e paymentID']); exit; }
-        $url = $apiHost . '/addresses/' . rawurlencode($address) . '/' . rawurlencode($input['paymentID']);
-        $method = 'GET';
-        break;
-
-    //
-    // KEYS / SEED
-    //
-    case 'keys':
-        // GET /keys  -> shared private view key (o elenco chiavi)
-        $url = $apiHost . '/keys';
-        $method = 'GET';
-        break;
-    case 'keys_address':
-        if (empty($address)) { echo json_encode(['status'=>'error','message'=>'Serve l\'indirizzo per keys']); exit; }
-        $url = $apiHost . '/keys/' . rawurlencode($address);
-        $method = 'GET';
-        break;
-    case 'keys_mnemonic':
-    case 'mnemonic':
-        if (empty($address)) { echo json_encode(['status'=>'error','message'=>'Serve l\'indirizzo per mnemonic']); exit; }
-        // GET /keys/mnemonic/{address}
-        $url = $apiHost . '/keys/mnemonic/' . rawurlencode($address);
-        $method = 'GET';
-        break;
-
-    //
-    // TRANSAZIONI
-    //
-    case 'transactions':
-        $url = $apiHost . '/transactions';
-        $method = 'GET';
-        break;
-    case 'transactions_hash':
-        if (empty($input['hash'])) { echo json_encode(['status'=>'error','message'=>'Serve hash']); exit; }
-        $url = $apiHost . '/transactions/hash/' . rawurlencode($input['hash']);
-        $method = 'GET';
-        break;
-    case 'transactions_unconfirmed':
-        $url = $apiHost . '/transactions/unconfirmed';
-        $method = 'GET';
-        break;
-    case 'transactions_unconfirmed_addr':
-        if (empty($address)) { echo json_encode(['status'=>'error','message'=>'Serve indirizzo']); exit; }
-        $url = $apiHost . '/transactions/unconfirmed/' . rawurlencode($address);
-        $method = 'GET';
-        break;
-    case 'transactions_start':
-        if ($startHeight === null) { echo json_encode(['status'=>'error','message'=>'Serve startHeight']); exit; }
-        $url = $apiHost . '/transactions/' . intval($startHeight);
-        $method = 'GET';
-        break;
-    case 'transactions_range':
-        if ($startHeight === null || $endHeight === null) { echo json_encode(['status'=>'error','message'=>'Serve startHeight ed endHeight']); exit; }
-        $url = $apiHost . '/transactions/' . intval($startHeight) . '/' . intval($endHeight);
-        $method = 'GET';
-        break;
-    case 'transactions_address_range':
-        if (empty($address) || $startHeight === null || $endHeight === null) { echo json_encode(['status'=>'error','message'=>'Serve address, startHeight ed endHeight']); exit; }
-        $url = $apiHost . '/transactions/address/' . rawurlencode($address) . '/' . intval($startHeight) . '/' . intval($endHeight);
-        $method = 'GET';
-        break;
-    case 'transactions_send_basic':
-    case 'send':
-        $url = $apiHost . '/transactions/send/basic';
-        $method = 'POST';
-        $payload = ['address' => $address, 'amount' => (int)$amount, 'paymentID' => $paymentID];
-        break;
-    case 'transactions_prepare_basic':
-        $url = $apiHost . '/transactions/prepare/basic';
-        $method = 'POST';
-        $payload = ['address' => $address, 'amount' => (int)$amount, 'paymentID' => $paymentID];
-        break;
-    case 'transactions_send_advanced':
-        $url = $apiHost . '/transactions/send/advanced';
-        $method = 'POST';
-        $payload = $input['tx'] ?? null; // advanced payload expected
-        break;
-    case 'transactions_prepare_advanced':
-        $url = $apiHost . '/transactions/prepare/advanced';
-        $method = 'POST';
-        $payload = $input['tx'] ?? null;
-        break;
-    case 'transactions_send_prepared':
-        if (empty($input['prepared'])) { echo json_encode(['status'=>'error','message'=>'Serve il prepared tx']); exit; }
-        $url = $apiHost . '/transactions/send/prepared';
-        $method = 'POST';
-        $payload = ['prepared' => $input['prepared']];
-        break;
-    case 'transactions_cancel_prepared':
-        if (empty($input['hash'])) { echo json_encode(['status'=>'error','message'=>'Serve hash della prepared']); exit; }
-        $url = $apiHost . '/transactions/prepared/' . rawurlencode($input['hash']);
-        $method = 'DELETE';
-        break;
-    case 'transactions_fusion_basic':
-        $url = $apiHost . '/transactions/send/fusion/basic';
-        $method = 'POST';
-        $payload = $input['params'] ?? null;
-        break;
-    case 'transactions_fusion_advanced':
-        $url = $apiHost . '/transactions/send/fusion/advanced';
-        $method = 'POST';
-        $payload = $input['params'] ?? null;
-        break;
-    case 'transactions_privatekey':
-        if (empty($input['hash'])) { echo json_encode(['status'=>'error','message'=>'Serve hash TX']); exit; }
-        $url = $apiHost . '/transactions/privatekey/' . rawurlencode($input['hash']);
-        $method = 'GET';
-        break;
-
-    //
-    // BALANCE
-    //
-    case 'balance':
-        $url = $apiHost . '/balance';
-        $method = 'GET';
-        break;
-    case 'balance_addr':
-        if (empty($address)) { echo json_encode(['status'=>'error','message'=>'Serve indirizzo per bilancio']); exit; }
-        $url = $apiHost . '/balance/' . rawurlencode($address);
-        $method = 'GET';
-        break;
-    case 'balances':
-        $url = $apiHost . '/balances';
-        $method = 'GET';
-        break;
-
-    //
-    // MISC
-    //
-    case 'save':
-        $url = $apiHost . '/save';
-        $method = 'PUT';
-        break;
-    case 'export_json':
-        $url = $apiHost . '/export/json';
-        $method = 'POST';
-        $payload = ['filepath' => $filepath];
-        break;
-    case 'reset':
-        $url = $apiHost . '/reset';
-        $method = 'PUT';
-        $payload = (isset($input['startHeight']) ? ['startHeight' => intval($input['startHeight'])] : null);
-        break;
-    case 'addresses_validate':
-        $url = $apiHost . '/addresses/validate';
-        $method = 'POST';
-        $payload = ['address' => $address];
-        break;
-    case 'status':
-        $url = $apiHost . '/status';
-        $method = 'GET';
-        break;
-
-    //
-
-case 'download_wallet':
-    // Controllo file esista
-    if (!file_exists($fullPath)) {
-        echo json_encode(['status'=>'error','message'=>"File wallet non trovato: $filename"]);
-        exit;
+// -----------------------------------------------------------------------------
+// load only API_KEY from .env (simple parser, ignores comments/empty lines)
+// -----------------------------------------------------------------------------
+function load_api_key_from_env($envPath) {
+    global $API_DEBUG;
+    if (!file_exists($envPath)) {
+        log_line($API_DEBUG, "load_api_key_from_env: .env not found at $envPath");
+        return null;
     }
-    // Genero un token temporaneo
-    $token = bin2hex(random_bytes(16));
-    $tokenFile = "/tmp/wallet_token_$token.json";
-    file_put_contents($tokenFile, json_encode(['file'=>$fullPath, 'expires'=>time()+300])); // 5 minuti
-    echo json_encode(['status'=>'success','token'=>$token]);
-    exit;
-
-
-
-    // NODE
-    //
-    case 'node_get':
-        $url = $apiHost . '/node';
-        $method = 'GET';
-        break;
-    case 'node_put':
-        $url = $apiHost . '/node';
-        $method = 'PUT';
-        $payload = ['node' => $input['node'] ?? '', 'port' => intval($input['port'] ?? 0)];
-        break;
-
-    //
-    // CUSTOM: invia qualunque endpoint (path deve iniziare con /)
-    //
-    case 'custom':
-        $endpoint = $input['endpoint'] ?? '';
-        if (empty($endpoint) || $endpoint[0] !== '/') { echo json_encode(['status'=>'error','message'=>'endpoint custom mancante (deve iniziare con /)']); exit; }
-        $url = $apiHost . $endpoint;
-        $method = strtoupper($input['method'] ?? 'GET');
-        $payload = $input['data'] ?? null;
-        break;
-
-    default:
-        echo json_encode(['status'=>'error','message'=>'Azione non supportata: '.$action]);
-        exit;
+    $lines = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($lines as $line) {
+        $line = trim($line);
+        if ($line === '' || $line[0] === '#' || $line[0] === ';') continue;
+        if (strpos($line, '=') === false) continue;
+        list($name, $value) = explode('=', $line, 2);
+        $name = trim($name);
+        $value = trim($value);
+        // remove optional quotes
+        if ((substr($value,0,1) === '"' && substr($value,-1) === '"')
+            || (substr($value,0,1) === "'" && substr($value,-1) === "'")) {
+            $value = substr($value,1,-1);
+        }
+        if ($name === 'API_KEY') {
+            // set in environment for consistency
+            putenv("API_KEY=$value");
+            $_ENV['API_KEY'] = $value;
+            $_SERVER['API_KEY'] = $value;
+            log_line($API_DEBUG, "load_api_key_from_env: API_KEY loaded (len=" . strlen($value) . ")");
+            return $value;
+        }
+    }
+    log_line($API_DEBUG, "load_api_key_from_env: API_KEY not found in $envPath");
+    return null;
 }
 
-// Prepare curl
-$ch = curl_init($url);
-$verboseHandle = fopen($verboseFile, 'a+');
+// carico la API key (non la stampo mai)
+$FIXED_API_KEY = load_api_key_from_env($ENV_PATH);
 
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_VERBOSE, true);
-curl_setopt($ch, CURLOPT_STDERR, $verboseHandle);
-curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
-curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-
-// headers - always send X-API-KEY
-$headers = ['X-API-KEY: desy2011', 'Accept: application/json'];
-// If payload present or custom JSON, add content-type
-if (!is_null($payload)) $headers[] = 'Content-Type: application/json';
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-
-// Set method & body
-$method = strtoupper($method);
-if ($method === 'GET') {
-    // default - nothing to do
-} elseif ($method === 'POST') {
-    curl_setopt($ch, CURLOPT_POST, true);
-    if (!is_null($payload)) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-} elseif ($method === 'PUT') {
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-    if (!is_null($payload)) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-} elseif ($method === 'DELETE') {
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
-    if (!is_null($payload)) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-} else {
-    // Other custom methods
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    if (!is_null($payload)) curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+// -----------------------------------------------------------------------------
+// util
+// -----------------------------------------------------------------------------
+function safe_basename($name) {
+    $n = basename($name);
+    return preg_replace('/[^A-Za-z0-9._-]/', '_', $n);
 }
 
-// Exec
-$response = curl_exec($ch);
-$curlError = curl_error($ch);
-$curlInfo = curl_getinfo($ch);
-$httpCode = $curlInfo['http_code'] ?? 0;
+function build_wallet_path_simple($baseDir, $filename) {
+    $safe = safe_basename($filename);
+    $dir = rtrim($baseDir, '/');
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $full = $dir . '/' . $safe;
 
-fclose($verboseHandle);
-curl_close($ch);
+    if (file_exists($full)) {
+        $dotPos = strrpos($safe, '.');
+        if ($dotPos !== false) {
+            $name = substr($safe, 0, $dotPos);
+            $ext  = substr($safe, $dotPos);
+        } else {
+            $name = $safe;
+            $ext  = '';
+        }
+        $uniq = bin2hex(random_bytes(4));
+        $safe2 = $name . '_' . $uniq . $ext;
+        $full = $dir . '/' . $safe2;
+        $safe = $safe2;
+    }
 
-file_put_contents($logFile, "Request: [$method] $url\nPayload: ".json_encode($payload)."\nHTTP_CODE: $httpCode\nCurlErr: $curlError\nResponse: $response\n\n", FILE_APPEND);
+    return ['dir'=>$dir,'fullpath'=>$full,'relative'=>basename($full)];
+}
 
-// Output standardized
-$output = [
-    'status' => ($curlError || ($httpCode !== 200 && $httpCode !== 204 && $httpCode !== 201)) ? 'error' : 'success',
-    'http_code' => $httpCode,
-    'curl_error' => $curlError ?: null,
-    'wallet_response_raw' => $response,
-    'wallet_file' => $fullPath,
-    'logfile' => $logFile,
-    'verbose_file' => $verboseFile
+// -----------------------------------------------------------------------------
+// call wallet-api (usa la API key caricata; se mancante logga e invia richiesta senza header)
+// -----------------------------------------------------------------------------
+function call_wallet_api($host, $endpoint, $method='GET', $payload=null) {
+    global $VERBOSE_FILE, $API_DEBUG, $FIXED_API_KEY;
+
+    $endpoint = (substr($endpoint,0,1)==='/') ? $endpoint : '/'.$endpoint;
+    $url = rtrim($host,'/') . $endpoint;
+
+    $ch = curl_init($url);
+    $fh = @fopen($VERBOSE_FILE,'a+');
+
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER,true);
+    curl_setopt($ch, CURLOPT_CONNECTTIMEOUT,10);
+    curl_setopt($ch, CURLOPT_TIMEOUT,60);
+    curl_setopt($ch, CURLOPT_VERBOSE,true);
+    if ($fh) curl_setopt($ch, CURLOPT_STDERR,$fh);
+
+    $headers = ["Accept: application/json"];
+    if (!empty($FIXED_API_KEY)) {
+        $headers[] = "X-API-KEY: $FIXED_API_KEY";
+    } else {
+        log_line($API_DEBUG, "call_wallet_api: WARNING no API key loaded for $url");
+    }
+
+    if ($payload !== null) $headers[] = "Content-Type: application/json";
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    $m = strtoupper($method);
+    if ($m === 'POST') curl_setopt($ch, CURLOPT_POST,true);
+    elseif (in_array($m,['PUT','DELETE'])) curl_setopt($ch, CURLOPT_CUSTOMREQUEST,$m);
+
+    if ($payload !== null) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+    }
+
+    $resp = curl_exec($ch);
+    $err  = curl_error($ch);
+    $info = curl_getinfo($ch);
+
+    if ($fh) fclose($fh);
+    curl_close($ch);
+
+    log_line($API_DEBUG, "call_wallet_api: $m $url -> http=" . ($info['http_code'] ?? 0) . " err=" . ($err?:'OK'));
+
+    return [
+        'url'=>$url,
+        'method'=>$m,
+        'payload'=>$payload,
+        'response'=>$resp,
+        'error'=>$err,
+        'http_code'=>$info['http_code'] ?? 0
+    ];
+}
+
+// -----------------------------------------------------------------------------
+// queue utils
+// -----------------------------------------------------------------------------
+function enqueue_job_file($job, $queueDir) {
+    $id = bin2hex(random_bytes(12));
+    $path = $queueDir.'/'.$id.'.job';
+    @file_put_contents($path.'.tmp', json_encode($job,JSON_PRETTY_PRINT), LOCK_EX);
+    rename($path.'.tmp', $path);
+    return $id;
+}
+
+function pick_and_lock_job($queueDir, $lockPath) {
+    $lockFd = @fopen($lockPath,'c+');
+    if (!$lockFd) return null;
+    if (!flock($lockFd, LOCK_EX|LOCK_NB)) { fclose($lockFd); return null; }
+
+    $files = glob($queueDir.'/*.job');
+    if (empty($files)) { flock($lockFd,LOCK_UN); fclose($lockFd); return null; }
+
+    usort($files, fn($a,$b)=>filemtime($a)-filemtime($b));
+
+    $processing = $files[0].'.processing';
+    rename($files[0], $processing);
+
+    return ['lockFd'=>$lockFd,'processing'=>$processing];
+}
+
+function release_lock($lockFd) {
+    flock($lockFd, LOCK_UN);
+    fclose($lockFd);
+}
+
+// -----------------------------------------------------------------------------
+// process job
+// -----------------------------------------------------------------------------
+function process_job_file($jobPath) {
+    global $JOBS_DIR, $RESULTS_DIR, $SERVERS, $BASE_WALLET_DIR;
+
+    $job = json_decode(@file_get_contents($jobPath), true);
+    $jobId = basename($jobPath);
+    $jobLog = $JOBS_DIR.'/'.$jobId.'.log';
+
+    log_line($jobLog, "START job=".json_encode($job));
+
+    $serverKey = $job['serverKey'] ?? null;
+    $serverHost = isset($SERVERS[$serverKey]) ? $SERVERS[$serverKey] : $SERVERS[array_rand($SERVERS)];
+
+    $action = $job['action'] ?? 'create';
+    $result = ['jobId'=>$jobId,'action'=>$action,'server'=>$serverHost];
+
+    try {
+        if ($action === 'create') {
+            $walletFile = $job['fullPath'] ?? null;
+            $walletPassword = $job['password'] ?? null;
+
+            $result['create'] = call_wallet_api(
+                $serverHost,
+                '/wallet/create',
+                'POST',
+                ['filename'=>$walletFile,'password'=>$walletPassword]
+            );
+
+            $result['close'] = call_wallet_api($serverHost, '/wallet', 'DELETE', []);
+            $result['success'] = in_array($result['close']['http_code'],[200,204]);
+
+        } elseif ($action === 'address_create') {
+            $walletFile = $job['fullPath'] ?? null;
+            $walletPassword = $job['password'] ?? null;
+
+            $result['open'] = call_wallet_api(
+                $serverHost,
+                '/wallet/open',
+                'POST',
+                ['filename'=>$walletFile,'password'=>$walletPassword]
+            );
+
+            $payload = !empty($job['label']) ? ['label'=>$job['label']] : null;
+            $result['address'] = call_wallet_api(
+                $serverHost,
+                '/addresses/create',
+                'POST',
+                $payload
+            );
+
+            $result['close'] = call_wallet_api($serverHost, '/wallet','DELETE',[]);
+            $result['success'] = ($result['address']['http_code'] ?? 0) == 200;
+
+        } elseif ($action === 'custom') {
+            $result['custom'] = call_wallet_api(
+                $serverHost,
+                $job['endpoint'] ?? '/',
+                $job['method'] ?? 'GET',
+                $job['payload'] ?? null
+            );
+            $result['success'] = in_array($result['custom']['http_code'] ?? 0,[200,201,204]);
+        } else {
+            throw new Exception("Azione non implementata: $action");
+        }
+    } catch (Exception $e) {
+        log_line($jobLog, "EXCEPTION: ".$e->getMessage());
+        $result['error'] = $e->getMessage();
+        $result['success'] = false;
+    }
+
+    @file_put_contents($RESULTS_DIR.'/'.$jobId.'.result.json', json_encode($result,JSON_PRETTY_PRINT));
+    @unlink($jobPath);
+
+    return $result;
+}
+
+// -----------------------------------------------------------------------------
+// main
+// -----------------------------------------------------------------------------
+$input = json_decode(@file_get_contents('php://input'), true) ?: [];
+
+$action   = $input['action'] ?? 'create';
+$filename = safe_basename($input['filename'] ?? ('wallet_'.time().'.wallet'));
+$pwd      = $input['password'] ?? null;
+$server   = $input['server'] ?? null;
+$async    = !empty($input['async']);
+
+$jobPathInfo = null;
+if ($action==='create') {
+    $jobPathInfo = build_wallet_path_simple($BASE_WALLET_DIR, $filename);
+}
+
+$job = [
+    'action'=>$action,
+    'filename'=>$filename,
+    'password'=>$pwd,
+    'serverKey'=>$server,
+    'relative'=>$jobPathInfo['relative'] ?? null,
+    'fullPath'=>$jobPathInfo['fullpath'] ?? null,
+    'endpoint'=>$input['endpoint'] ?? null,
+    'method'=>$input['method'] ?? null,
+    'payload'=>$input['payload'] ?? null,
+    'label'=>$input['label'] ?? null
 ];
 
-if ($curlError || ($httpCode !== 200 && $httpCode !== 204 && $httpCode !== 201)) http_response_code(500);
-echo json_encode($output, JSON_PRETTY_PRINT);
+$lockPath = $QUEUE_DIR.'/lock_'.($server?:'default').'.lock';
+$jobId = enqueue_job_file($job, $QUEUE_DIR);
+
+if ($async) {
+    echo json_encode(['status'=>'queued','jobId'=>$jobId], JSON_PRETTY_PRINT);
+    exit;
+}
+
+$pick = pick_and_lock_job($QUEUE_DIR, $lockPath);
+
+if ($pick) {
+    $res = process_job_file($pick['processing']);
+    release_lock($pick['lockFd']);
+    echo json_encode(['status'=>'processed','jobId'=>$jobId,'result'=>$res], JSON_PRETTY_PRINT);
+} else {
+    echo json_encode(['status'=>'waiting','jobId'=>$jobId], JSON_PRETTY_PRINT);
+}

@@ -27,6 +27,9 @@ button.warn { background:#f57c00; }
 .small { font-size:12px; color:#666; }
 .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .inline { display:inline-block; vertical-align:middle; }
+.flex-row { display:flex; gap:10px; align-items:center; }
+.flex-row > * { flex:1; }
+.select-small { width: 220px; display:inline-block; }
 </style>
 </head>
 <body>
@@ -35,9 +38,20 @@ button.warn { background:#f57c00; }
 
 <div class="section">
     <label>Nome wallet (file)</label>
-    <input id="walletName" value="testwallet_1.wallet" />
+    <div class="flex-row">
+        <input id="walletName" value="wallet.wallet" />
+        <div style="max-width:240px;">
+            <label style="font-weight:600; margin-top:0;">Server</label>
+            <select id="walletServer" class="select-small">
+                <option value="">Auto (random)</option>
+                <option value="82">Server 82 (82.165.218.56)</option>
+                <option value="87">Server 87 (87.106.40.193)</option>
+            </select>
+        </div>
+    </div>
+
     <label>Password API / Wallet</label>
-    <input id="walletPass" value="desy2011" />
+    <input id="walletPass" value="password" />
 </div>
 
 <div class="section grid2">
@@ -148,9 +162,12 @@ async function callApi(bodyObj) {
 }
 
 function baseParams() {
+    // include la scelta server (vuoto => null => backend sceglie random)
+    const serverVal = document.getElementById('walletServer').value.trim();
     return {
         filename: document.getElementById('walletName').value.trim(),
-        password: document.getElementById('walletPass').value.trim()
+        password: document.getElementById('walletPass').value.trim(),
+        server: serverVal === '' ? null : serverVal
     };
 }
 
@@ -236,7 +253,8 @@ document.getElementById('btnCustom').addEventListener('click', ()=> {
     let data = null;
     try { data = document.getElementById('customData').value.trim() ? JSON.parse(document.getElementById('customData').value) : null; } catch(e) { alert('JSON body non valido'); return; }
     if(!endp.startsWith('/')) { alert('Endpoint deve iniziare con /'); return; }
-    callApi(Object.assign({action:'custom', endpoint:endp, method:method, data:data}, baseParams()));
+    // inviamo il body come "payload" per compatibilità con api.php aggiornato
+    callApi(Object.assign({action:'custom', endpoint:endp, method:method, payload:data}, baseParams()));
 });
 
 </script>

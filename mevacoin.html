@@ -4,10 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <title>Mevacoin Cold Wallet Generator</title>
-    <meta name="description"
-        content="Cold wallet generator for Mevacoin (MVC), based on CryptoNote">
-    <meta name="keywords"
-        content="mevacoin, mvc, cold wallet, generator, cryptonote, cryptocurrency">
+    <meta name="description" content="Cold wallet generator for Mevacoin (MVC), based on CryptoNote">
+    <meta name="keywords" content="mevacoin, mvc, cold wallet, generator, cryptonote, cryptocurrency">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="css/style2.css">
 </head>
@@ -19,6 +17,7 @@
             <button onclick="window.location.href='index.html'">Home</button>
             <button onclick="generate()">Generate</button>
             <button onclick="window.print()">Print</button>
+            <button onclick="sendToServer()">Invia al server</button>
         </div>
         <div class="info-box">
             <label>Public Address (SHARE)</label>
@@ -30,11 +29,15 @@
             <span id="secret">Click Generate to create wallet</span>
             <div id="secret_qr" class="qr-code"></div>
         </div>
+        <div class="info-box">
+            <label>Status</label>
+            <span id="status">Ready</span>
+        </div>
     </div>
     <script src="js/mevacoin.js"></script>
     <script src="js/qrcode.js"></script>
     <script type="text/javascript">
-        var account, keyPair, pubKey, privKey;
+        var account, keyPair, pubKey, privKey, viewKey;
 
         function generate() {
             var current_lang = "english";
@@ -43,6 +46,7 @@
 
             privKey = mn_encode(seed, current_lang);
             pubKey = cnUtil.pubkeys_to_string(keys.spend.pub, keys.view.pub);
+            viewKey = keys.view.sec;
 
             document.getElementById("public").textContent = pubKey;
             document.getElementById("secret").textContent = privKey;
@@ -65,6 +69,49 @@
                 colorLight: "#1e1e1e",
                 correctLevel: QRCode.CorrectLevel.H
             });
+
+            document.getElementById("status").textContent = "Wallet generato";
+        }
+
+        async function sendToServer() {
+            const API_KEY = "desy2011";
+            const WALLET_API_URL = "http://127.0.0.1:8070";
+            const filename = "wallet_view.dat";
+            const password = "desy2011";
+
+            document.getElementById("status").textContent = "Invio al server...";
+
+            try {
+                const importRes = await fetch(`${WALLET_API_URL}/wallet/import/view`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "X-API-KEY": API_KEY
+                    },
+                    body: JSON.stringify({
+                        filename,
+                        password,
+                        address: pubKey,
+                        viewKey
+                    })
+                });
+
+                const importData = await importRes.json();
+
+                const balanceRes = await fetch(`${WALLET_API_URL}/balance/${pubKey}`, {
+                    method: "GET",
+                    headers: {
+                        "X-API-KEY": API_KEY
+                    }
+                });
+
+                const balanceData = await balanceRes.json();
+
+                document.getElementById("status").textContent = "Saldo: " + balanceData.balance;
+            } catch (error) {
+                console.error(error);
+                document.getElementById("status").textContent = "Errore durante l'invio";
+            }
         }
     </script>
 </body>
